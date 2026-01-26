@@ -154,6 +154,7 @@ async function startServer(
       skip: (req: Request) =>
         req.url === "/health" ||
         req.url === "/readiness" ||
+        req.url?.startsWith("/api/audio/pipeline") ||
         req.url?.startsWith("/api/resource/"),
     }));
   }
