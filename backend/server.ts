@@ -28,6 +28,7 @@ import { WebSocketServer } from "npm:ws@^8.18.0";
 
 import { requestCounter } from "@/lib/telemetry.ts";
 import { handlePcmWebSocket } from "@/services/audio.websocket.server.ts";
+import { handleOpusWebSocket } from "@/services/audio.websocket.opus.server.ts";
 import { handleUpdatesWebSocket } from "@/services/updates.websocket.server.ts";
 import { setupResources } from "@/lib/resources/registry.ts";
 import { shutdownTelemetry } from "@/lib/telemetry.ts";
@@ -173,7 +174,18 @@ async function startServer(
 
   httpServer.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "", `http://${request.headers.host}`);
-    if (url.pathname === "/ws_pcm") {
+    // Unified auto-detecting audio endpoint (recommended)
+    if (url.pathname === "/ws/audio") {
+      wss.handleUpgrade(request, socket, head, (ws: any) => {
+        handlePcmWebSocket(ws, request).catch((error) => {
+          console.error("WebSocket audio error:", error);
+          if (ws.readyState === 1) {
+            ws.close(1011, "Internal server error");
+          }
+        });
+      });
+    // Legacy endpoints (backward compatibility)
+    } else if (url.pathname === "/ws_pcm") {
       wss.handleUpgrade(request, socket, head, (ws: any) => {
         // Add error handler immediately to catch any errors including broken pipe
         ws.on("error", (error: Error) => {
@@ -192,6 +204,15 @@ async function startServer(
             }
           } catch (closeError) {
             // Ignore errors when closing (socket might already be dead)
+          }
+        });
+      });
+    } else if (url.pathname === "/ws_omi") {
+      wss.handleUpgrade(request, socket, head, (ws: any) => {
+        handleOpusWebSocket(ws, request).catch((error) => {
+          console.error("WebSocket Opus/OMI error:", error);
+          if (ws.readyState === 1) {
+            ws.close(1011, "Internal server error");
           }
         });
       });
@@ -283,7 +304,7 @@ async function configureCli() {
             alias: "p",
             type: "number",
             describe: "Port to serve on.",
-            default: 5173,
+            default: 8888,
           })
           .option("host", {
             alias: "h",
