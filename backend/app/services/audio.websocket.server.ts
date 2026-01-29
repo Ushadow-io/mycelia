@@ -472,7 +472,7 @@ class PcmWebSocketSession {
 
           // Log every 50 frames with statistics
           if (this.opusFrameCount % 50 === 0) {
-            log("INFO", `[OPUS_DECODE] Progress checkpoint`, {
+            log("DEBUG", `[OPUS_DECODE] Progress checkpoint`, {
               sessionId: this.sessionId,
               framesProcessed: this.opusFrameCount,
               bufferedPcmBytes: this.buffer.length,
