@@ -24,6 +24,11 @@ import { wellKnownOauthAuthorizationServerHandler } from "@/routes/[.]well-known
 import { wellKnownOauthProtectedResourceHandler } from "@/routes/[.]well-known.oauth-protected-resource.ts";
 import { apiChatHandler } from "@/routes/api.chat.ts";
 import { apiAudioPipelineHandler } from "@/routes/api.audio.pipeline.ts";
+import {
+  dataConversationsHandler,
+  dataConversationByIdHandler,
+  dataConversationsStatsHandler,
+} from "@/routes/data.conversations.ts";
 import { asyncHandler } from "@/middleware/asyncHandler.ts";
 
 export function registerRoutes(app: Express): void {
@@ -32,6 +37,9 @@ export function registerRoutes(app: Express): void {
   app.post("/api/setup", asyncHandler(setupHandler));
   app.get("/data/audio", dataAudioHandler);
   app.get("/data/audio/items", dataAudioItemsHandler);
+  app.get("/data/conversations", asyncHandler(dataConversationsHandler));
+  app.get("/data/conversations/stats", asyncHandler(dataConversationsStatsHandler));
+  app.get("/data/conversations/:id", asyncHandler(dataConversationByIdHandler));
   app.post("/api/resource/:name", asyncHandler(apiResourceHandler));
   app.post("/api/chat", asyncHandler(apiChatHandler));
   app.get("/api/audio/pipeline", asyncHandler(apiAudioPipelineHandler));

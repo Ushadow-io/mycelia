@@ -3,6 +3,7 @@ import { authenticateOr401 } from "@/lib/auth/core.server.ts";
 import { getRootDB } from "@/lib/mongo/core.server.ts";
 import { EJSON } from "bson";
 import { ObjectId } from "mongodb";
+import { ConversationService } from "@/services/conversation.server.ts";
 
 interface PipelineSession {
   _id: string;
@@ -75,7 +76,7 @@ interface PipelineStats {
 
 export async function apiAudioPipelineHandler(req: Request, res: Response) {
   try {
-    await authenticateOr401(req, res);
+    const auth = await authenticateOr401(req, res);
 
     const limit = parseInt(req.query.limit as string) || 10;
     const db = await getRootDB();
@@ -137,18 +138,13 @@ export async function apiAudioPipelineHandler(req: Request, res: Response) {
         ]);
 
         // Get conversations for this session via conversation chunks
+        // Now using ConversationService instead of direct MongoDB calls
         const chunkIds = conversationChunks.map((c: any) => c._id.toString());
-        const conversations =
-          chunkIds.length > 0
-            ? await db
-                .collection("objects")
-                .find({
-                  isConversation: true,
-                  "metadata.extractedWith.chunkId": { $in: chunkIds },
-                })
-                .sort({ createdAt: -1 })
-                .toArray()
-            : [];
+        const conversationDocs = await ConversationService.getConversationsForChunks(
+          auth,
+          chunkIds
+        );
+        const conversations = conversationDocs;
 
         return {
           _id: sf._id.toString(),
