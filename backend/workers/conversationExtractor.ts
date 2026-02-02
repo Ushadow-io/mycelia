@@ -850,6 +850,7 @@ const capability: JobCapability = {
             isConversation: true,
             name: segment.title.trim(),
             agreed_upon_something: metadata.agreed_upon_something,
+            createdAt: segment.start,  // Use conversation start time, not processing time (overrides auto-generated timestamp)
             timeRanges: [{
               start: segment.start.toISOString(),
               end: segment.end.toISOString(),
@@ -859,7 +860,7 @@ const capability: JobCapability = {
                 model: chunk.params.model,
                 extractorVersion: input.extractorVersion,
                 chunkId: chunk._id.toString(),
-                timestamp: new Date().toISOString(),
+                timestamp: new Date().toISOString(),  // This is the processing time
               },
             },
           };
