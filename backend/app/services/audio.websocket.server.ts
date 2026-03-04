@@ -820,12 +820,8 @@ export async function handlePcmWebSocket(
   const auth = await authenticate(request);
 
   if (!auth) {
-    log("WARN", `WebSocket auth failed`, { url: upgrade.url });
-    try {
-      ws.close(1008, "Unauthorized: Token is missing or invalid");
-    } catch (closeError) {
-      // Ignore errors when closing
-    }
+    log("WARN", `[AUDIO_WS] WebSocket auth failed`, { url: upgrade.url });
+    ws.close(1008, "[AUDIO_WS] Unauthorized: Token is missing or invalid");
     throw new Error("Unauthorized");
   }
 
