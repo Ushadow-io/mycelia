@@ -28,15 +28,33 @@ export class TranscriptionResource implements Resource<TranscriptionRequest, Tra
     response: z.any() as z.ZodType<TranscriptionResponse>,
   };
 
-  async getInferenceProvider(): Promise<{ baseUrl: string; apiKey: string } | null> {
+  async getInferenceProvider(): Promise<{ baseUrl: string; apiKey: string; model?: string } | null> {
+    // Stateless config: read from env vars first (ushadow pattern)
+    const envBaseUrl = Deno.env.get("TRANSCRIPTION_BASE_URL") || Deno.env.get("WHISPER_BASE_URL");
+    const envApiKey = Deno.env.get("TRANSCRIPTION_API_KEY") || Deno.env.get("WHISPER_API_KEY");
+    const envModel = Deno.env.get("TRANSCRIPTION_MODEL") || Deno.env.get("WHISPER_MODEL");
+
+    if (envBaseUrl) {
+      return {
+        baseUrl: envBaseUrl,
+        apiKey: envApiKey || "", // Allow empty API key for local services
+        model: envModel,
+      };
+    }
+
+    // Fallback to MongoDB config for backward compatibility
     const config = await getServerConfig();
-    const inference = config.inference;
-    if (!inference?.baseUrl || !inference?.apiKey) {
+    const providerConfig = config.transcription ?? config.inference;
+
+    if (!providerConfig?.baseUrl) {
       return null;
     }
+
+    // Allow empty API key for local services (like Faster Whisper)
     return {
-      baseUrl: inference.baseUrl,
-      apiKey: inference.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      apiKey: providerConfig.apiKey || "",
+      model: providerConfig.model,
     };
   }
 
@@ -55,15 +73,34 @@ export class TranscriptionResource implements Resource<TranscriptionRequest, Tra
           if (!provider) {
             span.setStatus({
               code: 2,
-              message: "Inference provider not configured",
+              message: "Transcription provider not configured",
             });
             throw new Error(
-              "Inference provider not configured. Please configure it in server settings."
+              "Transcription provider not configured. Please configure transcription.baseUrl in server settings (e.g., http://faster-whisper:8000 for local Whisper)."
             );
           }
 
+          // Normalize base URL: remove trailing slash, ensure we don't duplicate /v1
+          let baseUrl = provider.baseUrl.replace(/\/$/, "");
+          // If baseUrl already ends with /v1, don't add it again
+          const transcriptionPath = baseUrl.endsWith("/v1")
+            ? "/audio/transcriptions"
+            : "/v1/audio/transcriptions";
+          const fullUrl = baseUrl + transcriptionPath;
+
           span.setAttributes({
+            "transcription.provider_url": provider.baseUrl,
+            "transcription.full_url": fullUrl,
             "transcription.has_api_key": !!provider.apiKey,
+          });
+
+          // Debug: Log file type info
+          console.log("[TranscriptionResource] File type check:", {
+            type: typeof input.file,
+            isUint8Array: input.file instanceof Uint8Array,
+            isBuffer: input.file instanceof Buffer,
+            hasBinaryField: input.file && typeof input.file === "object" && "$binary" in input.file,
+            keys: input.file && typeof input.file === "object" ? Object.keys(input.file) : [],
           });
 
           let fileBuffer: Uint8Array;
@@ -81,27 +118,46 @@ export class TranscriptionResource implements Resource<TranscriptionRequest, Tra
             throw new Error(`Invalid file format. Expected Uint8Array, Buffer, or EJSON binary. Got ${typeof input.file}, ${Object.keys(input.file)}`);
           }
 
+          console.log("[TranscriptionResource] File buffer size:", fileBuffer.length);
+
           const formData = new FormData();
           const newBuffer = new Uint8Array(fileBuffer);
           const blob = new Blob([newBuffer], { type: input.fileType || "audio/mpeg" });
           const fileName = input.fileName || "audio.mp3";
           const file = new File([blob], fileName, { type: input.fileType || "audio/mpeg" });
           formData.append("file", file);
-          if (input.language) {
+
+          // Only add language if specified and not "auto" (Whisper auto-detects when omitted)
+          if (input.language && input.language !== "auto") {
             formData.append("language", input.language);
           }
+
           if (input.prompt) {
             formData.append("prompt", input.prompt);
           }
-          formData.append("model", "whisper");
+
+          // Use configured model if available, otherwise omit (server will use default)
+          // For Faster Whisper: expects "base", "small", "medium", etc.
+          // For OpenAI: expects "whisper-1"
+          if (provider.model) {
+            formData.append("model", provider.model);
+          }
+
+          // Request verbose_json format to get segments with timestamps
+          // Default format only returns text without segments
+          formData.append("response_format", "verbose_json");
+
+          // Build headers - only add Authorization if API key is present
+          const headers: Record<string, string> = {};
+          if (provider.apiKey) {
+            headers["Authorization"] = `Bearer ${provider.apiKey}`;
+          }
 
           const proxyResponse = await fetch(
-            provider.baseUrl.replace(/\/$/, "") + "/v1/audio/transcriptions",
+            fullUrl,
             {
               method: "POST",
-              headers: {
-                "Authorization": `Bearer ${provider.apiKey}`,
-              },
+              headers,
               body: formData,
             },
           );
@@ -121,9 +177,16 @@ export class TranscriptionResource implements Resource<TranscriptionRequest, Tra
           }
 
           const responseText = await proxyResponse.text();
+          console.log("[TranscriptionResource] Response text preview:", responseText.substring(0, 500));
 
           try {
             const jsonResponse = JSON.parse(responseText);
+            console.log("[TranscriptionResource] Parsed response:", {
+              hasText: !!jsonResponse.text,
+              textLength: jsonResponse.text?.length,
+              hasSegments: !!jsonResponse.segments,
+              segmentCount: jsonResponse.segments?.length,
+            });
             span.setStatus({ code: 1 });
             return jsonResponse;
           } catch (parseError) {
@@ -138,10 +201,12 @@ export class TranscriptionResource implements Resource<TranscriptionRequest, Tra
               `Invalid JSON response from provider: ${errorMessage}`,
             );
           }
+          break;
         }
-        default:
+        default: {
           span.setStatus({ code: 2, message: "Unknown action" });
           throw new Error("Unknown action");
+        }
       }
     } catch (error) {
       span.recordException(error as Error);

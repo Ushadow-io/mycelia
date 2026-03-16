@@ -3,6 +3,7 @@ import { authenticateOr401 } from "@/lib/auth/core.server.ts";
 import { getMongoResource } from "@/lib/mongo/core.server.ts";
 import { EJSON } from "bson";
 import { ObjectId } from "mongodb";
+import { ConversationService } from "@/services/conversation.server.ts";
 
 interface PipelineSession {
   _id: string;

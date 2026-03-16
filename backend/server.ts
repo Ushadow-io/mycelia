@@ -305,7 +305,7 @@ async function configureCli() {
             alias: "p",
             type: "number",
             describe: "Port to serve on.",
-            default: 5173,
+            default: 8888,
           })
           .option("host", {
             alias: "h",
