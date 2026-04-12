@@ -24,6 +24,7 @@ export interface ConversationDTO {
   audio_path?: string;
   cropped_audio_path?: string;
   created_at: string;
+  started_at?: string;
   deleted: boolean;
   deletion_reason: string | null;
   deleted_at: string | null;
@@ -116,9 +117,6 @@ export class ConversationService {
         // Get conversation start time from timeRanges
         const conversationStart = conversation.timeRanges?.[0]?.start;
 
-        console.log(`[ConversationService] Conversation ${conversationId}: chunkId=${chunkId}, conversationStart=${conversationStart}`);
-        console.log(`[ConversationService] ConversationChunk: transcriptionIds=${conversationChunk?.transcriptionIds?.length}`);
-
         if (conversationChunk && conversationChunk.transcriptionIds) {
           // Query all transcriptions for this chunk, sorted by start time
           const transcriptions = await db
@@ -128,8 +126,6 @@ export class ConversationService {
             })
             .sort({ start: 1 }) // Sort by start time, not createdAt
             .toArray();
-
-          console.log(`[ConversationService] Found ${transcriptions.length} transcriptions`);
 
           if (transcriptions && transcriptions.length > 0) {
             // Aggregate all transcript texts
@@ -158,12 +154,9 @@ export class ConversationService {
                 if (transcriptionStart && conversationStart) {
                   const conversationStartMs = new Date(conversationStart).getTime();
                   timeOffset = (transcriptionStart - conversationStartMs) / 1000;
-                  console.log(`[ConversationService] Transcription ${transcriptionIdx}: conversationStartMs=${conversationStartMs}, transcriptionStart=${transcriptionStart}, diff=${transcriptionStart - conversationStartMs}ms, timeOffset=${timeOffset}s`);
                 }
 
-                console.log(`[ConversationService] Transcription ${transcriptionIdx}: start=${transcription.start}, timeOffset=(${typeof timeOffset})${timeOffset}, segments=${transcription.segments.length}`);
-
-                transcription.segments.forEach((seg: any, segIdx: number) => {
+                transcription.segments.forEach((seg: any) => {
                   const adjustedSeg = {
                     ...seg,
                     start: (seg.start || 0) + timeOffset,
@@ -173,7 +166,6 @@ export class ConversationService {
                     segment: adjustedSeg,
                     transcriptionIdx,
                   });
-                  console.log(`[ConversationService]   Segment ${segIdx}: original=(${typeof seg.start})${seg.start}-${seg.end}, adjusted=(${typeof adjustedSeg.start})${adjustedSeg.start}-${adjustedSeg.end}, text="${seg.text?.substring(0, 60)}..."`);
                 });
               }
             });
@@ -183,8 +175,6 @@ export class ConversationService {
             const sortedByTime = allSegmentsWithIndex.sort(
               (a, b) => a.segment.start - b.segment.start
             );
-
-            console.log(`[ConversationService] Deduplicating ${sortedByTime.length} total segments...`);
 
             for (const item of sortedByTime) {
               // Check if this segment overlaps with any segment from a later transcription
@@ -203,14 +193,10 @@ export class ConversationService {
 
               if (laterOverlaps.length === 0) {
                 dedupedSegments.push(item.segment);
-                console.log(`[ConversationService] ✓ Keeping segment from T${item.transcriptionIdx}: ${item.segment.start.toFixed(1)}-${item.segment.end.toFixed(1)}`);
-              } else {
-                console.log(`[ConversationService] ✗ Skipping segment from T${item.transcriptionIdx}: ${item.segment.start.toFixed(1)}-${item.segment.end.toFixed(1)} (overlaps with T${laterOverlaps[0].transcriptionIdx})`);
               }
             }
 
             const allSegments = dedupedSegments.sort((a, b) => a.start - b.start);
-            console.log(`[ConversationService] Final segment count: ${allSegments.length}`);
 
             // Transform segments to API format (add speaker field)
             if (allSegments.length > 0) {
@@ -279,6 +265,9 @@ export class ConversationService {
 
       // Timestamps
       created_at: conv.createdAt.toISOString(),
+      started_at: primaryTimeRange?.start
+        ? new Date(primaryTimeRange.start).toISOString()
+        : undefined,
       completed_at: primaryTimeRange?.end
         ? new Date(primaryTimeRange.end).toISOString()
         : undefined,

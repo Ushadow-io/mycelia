@@ -151,6 +151,10 @@ export class ConversationStore {
     const db = await getRootDB();
     const { ObjectId } = await import("mongodb");
 
+    if (!ObjectId.isValid(conversationId)) {
+      return null;
+    }
+
     const conversation = await db
       .collection("objects")
       .findOne({

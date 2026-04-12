@@ -107,10 +107,10 @@ export class LLMResource implements Resource<LLMRequest, LLMResponse> {
     // Model resolution: OPENAI_MODEL (for override) > BASE_MODEL (primary config)
     const envModel = Deno.env.get("OPENAI_MODEL") || Deno.env.get("BASE_MODEL");
 
-    if (envBaseUrl && envApiKey) {
+    if (envBaseUrl) {
       return {
         baseUrl: envBaseUrl,
-        apiKey: envApiKey,
+        apiKey: envApiKey || "",
         model: envModel,
       };
     }
